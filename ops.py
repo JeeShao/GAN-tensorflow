@@ -94,13 +94,8 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
   shape = input_.get_shape().as_list()
 
   with tf.variable_scope(scope or "Linear"):
-    try:
-      matrix = tf.get_variable("Matrix", [shape[1], output_size], tf.float32,
+    matrix = tf.get_variable("Matrix", [shape[1], output_size], tf.float32,
                  tf.random_normal_initializer(stddev=stddev))
-    except ValueError as err:
-        msg = "NOTE: Usually, this is due to an issue with the image dimensions.  Did you correctly set '--crop' or '--input_height' or '--output_height'?"
-        err.args = err.args + (msg,)
-        raise
     bias = tf.get_variable("bias", [output_size],
       initializer=tf.constant_initializer(bias_start))
     if with_w:
