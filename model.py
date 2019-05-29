@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import division #精确除法 3/4=0.75
 import os
 import time
 import math
