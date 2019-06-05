@@ -44,24 +44,25 @@ class DCGAN(object):
     self.output_height = output_height
     self.output_width = output_width
 
-    self.y_dim = y_dim
-    self.z_dim = z_dim
+    self.y_dim = y_dim #标签 （用不到）
+    self.z_dim = z_dim #噪声数据维度100
 
-    self.gf_dim = gf_dim
+    self.gf_dim = gf_dim #G卷积层的过滤器个数，默认为64
     self.df_dim = df_dim
 
-    self.gfc_dim = gfc_dim
+    self.gfc_dim = gfc_dim #G全连接层的过滤器个数，默认为1024
     self.dfc_dim = dfc_dim
 
-    self.c_dim = c_dim
-
+    self.c_dim = c_dim #通道数3
     # batch normalization : deals with poor initialization helps gradient flow
+    #BN在卷积完成和激活函数relu之间加入
+    #D网络有三层 加3个BN
     self.d_bn1 = batch_norm(name='d_bn1')
     self.d_bn2 = batch_norm(name='d_bn2')
 
     if not self.y_dim:
       self.d_bn3 = batch_norm(name='d_bn3')
-
+    # G网络有三层 加4个BN
     self.g_bn0 = batch_norm(name='g_bn0')
     self.g_bn1 = batch_norm(name='g_bn1')
     self.g_bn2 = batch_norm(name='g_bn2')
@@ -83,9 +84,9 @@ class DCGAN(object):
     else:
       image_dims = [self.input_height, self.input_height, self.c_dim]
 
-    self.inputs = tf.placeholder(
+    self.inputs = tf.placeholder(  #真实样本输入
       tf.float32, [self.batch_size] + image_dims, name='real_images')
-    self.sample_inputs = tf.placeholder(
+    self.sample_inputs = tf.placeholder( #噪声样本输入
       tf.float32, [self.sample_num] + image_dims, name='sample_inputs')
 
     inputs = self.inputs
@@ -93,7 +94,7 @@ class DCGAN(object):
 
     self.z = tf.placeholder(
       tf.float32, [None, self.z_dim], name='z')
-    self.z_sum = histogram_summary("z", self.z)
+    self.z_sum = histogram_summary("z", self.z) #直方图展示数据分布
 
     if self.y_dim:
       self.G = self.generator(self.z, self.y)
@@ -105,24 +106,18 @@ class DCGAN(object):
           self.discriminator(self.G, self.y, reuse=True)
     else:
       self.G = self.generator(self.z)
-      self.D, self.D_logits = self.discriminator(inputs)
+      self.D, self.D_logits = self.discriminator(inputs) #真实样本->D判别
 
       self.sampler = self.sampler(self.z)
-      self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True)
+      self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True) #G生成样本->D判别
 
     self.d_sum = histogram_summary("d", self.D)
     self.d__sum = histogram_summary("d_", self.D_)
     self.G_sum = image_summary("G", self.G)
 
-    self.d_loss_real = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=self.D_logits, labels=tf.ones_like(self.D)))
-    self.d_loss_fake = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=self.D_logits_, labels=tf.zeros_like(self.D_)))
-    self.g_loss = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=self.D_logits_, labels=tf.ones_like(self.D_)))
+    self.d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.ones_like(self.D))) #真实数据期望判别结果->1
+    self.d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.zeros_like(self.D_))) #G生成数据期望判别结果->0
+    self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))# G网络目标是期望生成数据->1
 
     self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real)
     self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake)
@@ -134,7 +129,7 @@ class DCGAN(object):
 
     t_vars = tf.trainable_variables()
 
-    self.d_vars = [var for var in t_vars if 'd_' in var.name]
+    self.d_vars = [var for var in t_vars if 'd_' in var.name] #保存节点
     self.g_vars = [var for var in t_vars if 'g_' in var.name]
 
     self.saver = tf.train.Saver()
@@ -147,22 +142,18 @@ class DCGAN(object):
       data = glob(os.path.join("./data", config.dataset, self.input_fname_pattern))
     #np.random.shuffle(data)
 
-    d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
-              .minimize(self.d_loss, var_list=self.d_vars)
-    g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
-              .minimize(self.g_loss, var_list=self.g_vars)
+    d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.d_loss, var_list=self.d_vars) #优化器迭代优化loss
+    g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.g_loss, var_list=self.g_vars)
     try:
       tf.global_variables_initializer().run()
     except:
       tf.initialize_all_variables().run()
 
-    self.g_sum = merge_summary([self.z_sum, self.d__sum,
-      self.G_sum, self.d_loss_fake_sum, self.g_loss_sum])
-    self.d_sum = merge_summary(
-        [self.z_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
+    self.g_sum = merge_summary([self.z_sum, self.d__sum,self.G_sum, self.d_loss_fake_sum, self.g_loss_sum])
+    self.d_sum = merge_summary([self.z_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
     self.writer = SummaryWriter("./logs", self.sess.graph)
 
-    sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim))
+    sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #size=(64,100)
     
     if config.dataset == 'mnist':
       sample_inputs = data_X[0:self.sample_num]
@@ -194,16 +185,16 @@ class DCGAN(object):
       if config.dataset == 'mnist':
         batch_idxs = min(len(data_X), config.train_size) // config.batch_size
       else:      
-        data = glob(os.path.join(
-          "./data", config.dataset, self.input_fname_pattern))
-        batch_idxs = min(len(data), config.train_size) // config.batch_size
+        data = glob(os.path.join("./data", config.dataset, self.input_fname_pattern)) #所有的样本图
+        random.shuffle(data) #打乱顺序
+        batch_idxs = min(len(data), config.train_size) // config.batch_size #共有batch_idxs个batch_size的图片
 
       for idx in xrange(0, batch_idxs):
         if config.dataset == 'mnist':
           batch_images = data_X[idx*config.batch_size:(idx+1)*config.batch_size]
           batch_labels = data_y[idx*config.batch_size:(idx+1)*config.batch_size]
         else:
-          batch_files = data[idx*config.batch_size:(idx+1)*config.batch_size]
+          batch_files = data[idx*config.batch_size:(idx+1)*config.batch_size] #一次迭代64张图像
           batch = [
               get_image(batch_file,
                         input_height=self.input_height,
@@ -217,8 +208,7 @@ class DCGAN(object):
           else:
             batch_images = np.array(batch).astype(np.float32)
 
-        batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]) \
-              .astype(np.float32)
+        batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]).astype(np.float32) #(64,100)
 
         if config.dataset == 'mnist':
           # Update D network
@@ -257,18 +247,15 @@ class DCGAN(object):
           })
         else:
           # Update D network
-          _, summary_str = self.sess.run([d_optim, self.d_sum],
-            feed_dict={ self.inputs: batch_images, self.z: batch_z })
+          _, summary_str = self.sess.run([d_optim, self.d_sum],feed_dict={ self.inputs: batch_images, self.z: batch_z })
           self.writer.add_summary(summary_str, counter)
 
           # Update G network
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z })
+          _, summary_str = self.sess.run([g_optim, self.g_sum],feed_dict={ self.z: batch_z })
           self.writer.add_summary(summary_str, counter)
 
           # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z })
+          _, summary_str = self.sess.run([g_optim, self.g_sum],feed_dict={ self.z: batch_z })
           self.writer.add_summary(summary_str, counter)
           
           errD_fake = self.d_loss_fake.eval({ self.z: batch_z })
@@ -276,8 +263,7 @@ class DCGAN(object):
           errG = self.g_loss.eval({self.z: batch_z})
 
         counter += 1
-        print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
-          % (epoch, idx, batch_idxs,
+        print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" % (epoch, idx, batch_idxs,
             time.time() - start_time, errD_fake+errD_real, errG))
 
         if np.mod(counter, 100) == 1:
@@ -345,11 +331,11 @@ class DCGAN(object):
   def generator(self, z, y=None):
     with tf.variable_scope("generator") as scope:
       if not self.y_dim:
-        s_h, s_w = self.output_height, self.output_width
-        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
-        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
-        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
-        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2)
+        s_h, s_w = self.output_height, self.output_width #64 64
+        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2) #32 32
+        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2) #16 16
+        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2) #8 8
+        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2) #4 4
 
         # project `z` and reshape
         self.z_, self.h0_w, self.h0_b = linear(
@@ -357,7 +343,7 @@ class DCGAN(object):
 
         self.h0 = tf.reshape(
             self.z_, [-1, s_h16, s_w16, self.gf_dim * 8])
-        h0 = tf.nn.relu(self.g_bn0(self.h0))
+        h0 = tf.nn.relu(self.g_bn0(self.h0)) #第一层
 
         self.h1, self.h1_w, self.h1_b = deconv2d(
             h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1', with_w=True)

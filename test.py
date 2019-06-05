@@ -1,8 +1,8 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
-import tensorflow as tf
-a = tf.constant([1.0,2.0,3.0],shape=[3],name='a')
-b = tf.constant([1.0,2.0,3.0],shape=[3],name='b')
-c=a+b
-sess=tf.Session(config=tf.ConfigProto(log_device_placement=True))
-print(sess.run(c))
+
+i=1
+for file in os.listdir('../../../images64'):    #os.listdir('.')遍历文件夹内的每个文件名，并返回一个包含文件名的list
+    # print(file)#去掉空格
+    os.rename( os.path.join('../../../images64',file), os.path.join('../../../images64',str(i)+os.path.splitext(file)[-1]))
+    print(str(i)+os.path.splitext(file)[-1])
+    i+=1
